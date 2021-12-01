@@ -1,0 +1,180 @@
+---
+title: "Pan_Cancer_scRNAseq_Pre_processing"
+author: "Dillon Corvino"
+date: "20/09/2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+Built with R version `r getRversion()`
+
+## Setup {.tabset}
+
+### Dataset information
+```{r Dataset_Info}
+
+# Title: 
+# Authors: 
+# Species:
+# organ:
+# cell type:
+# Sample info:
+
+# GEO accession number: 
+
+#https://github.com/ncborcherding/utility
+
+```
+
+
+### Environment
+```{r setup}
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,  
+  eval = TRUE, 
+  tidy = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = "../"
+)
+
+
+# Environment Set up
+rm(list = ls()) #Clean workspace
+cat("\014")     #Clean Console
+gc() # Free memory
+
+# Establish working directory
+library("rstudioapi")
+
+# Set working directory to source file location
+setwd(dirname(getActiveDocumentContext()$path))
+setwd("..")
+
+# Load packages
+source("R/Load_packages.R", local = knitr::knit_global())
+
+# Create output directories & load custom functions & colour scheme
+source("R/Setup.R", local = knitr::knit_global())
+
+long.compute <- FALSE
+quick.load <- FALSE
+
+```
+
+### Read and format dataset
+```{r reading_data}
+
+if(long.compute){
+  
+  
+  # Read in full Borcheling dataset with all entities
+  filtered.seurat <- readRDS("Data/filtered_seuratObjects_harmony.rds")
+  
+  filtered.seurat 
+  # 54,971 genes and 1,316,585 cells
+  
+  
+  sample.types <- filtered.seurat@meta.data$Type
+  sample.types <- unique(sample.types)
+  
+  
+  for(i in seq_along(sample.types)){
+    Idents(filtered.seurat) <- filtered.seurat@meta.data$Type
+    
+    temp.seurat <- subset(filtered.seurat, 
+                          idents = paste0(sample.types[i]))
+    
+    SaveH5Seurat(object = temp.seurat, 
+                 filename = paste0("Data/Unity_dataset_", sample.types[i], ".h5Seurat"),
+                 verbose = TRUE,
+                 overwrite = FALSE)
+    
+    rm(temp.seurat)
+    gc()
+  }
+  
+  Tissue.types <- filtered.seurat@meta.data$Tissue
+  Tissue.types <- unique(Tissue.types)
+  
+  for(i in seq_along(Tissue.types)){
+    Idents(filtered.seurat) <- filtered.seurat@meta.data$Tissue
+    
+    temp.seurat <- subset(filtered.seurat, 
+                          idents = paste0(Tissue.types[i]))
+    
+    SaveH5Seurat(object = temp.seurat, 
+                 filename = paste0("Data/Unity_dataset_", Tissue.types[i], ".h5Seurat"),
+                 verbose = TRUE,
+                 overwrite = FALSE)
+    
+    rm(temp.seurat)
+    gc()
+  }
+}
+
+
+```
+ 
+### Overview of dataset
+```{r dataset_overview}
+
+colnames(filtered.seurat@meta.data)
+ 
+# Tissue
+UMAPPlot(filtered.seurat, 
+         group.by = "Tissue",
+         raster = TRUE)
+
+dev.copy(pdf, "output/figures/UMAP_tissue.pdf")
+dev.off()
+
+# Cohort
+UMAPPlot(filtered.seurat, 
+         group.by = "Cohort",
+         raster = TRUE)
+
+dev.copy(pdf, "output/figures/UMAP_cohort.pdf")
+dev.off()
+
+# Type
+UMAPPlot(filtered.seurat, 
+         group.by = "Type",
+         raster = TRUE)
+
+dev.copy(pdf, "output/figures/UMAP_type.pdf")
+dev.off()
+
+# consensus.major
+UMAPPlot(filtered.seurat, 
+         group.by = "consensus.major",
+         raster = TRUE)
+dev.copy(pdf, "output/figures/UMAP_consensus_major.pdf")
+dev.off()
+
+# consensus.Tcell
+UMAPPlot(filtered.seurat, 
+         group.by = "consensus.Tcell",
+         raster = TRUE)
+
+dev.copy(pdf, "output/figures/UMAP_consensus_T_cell.pdf")
+dev.off()
+
+```
+
+
+
+

@@ -1,0 +1,347 @@
+---
+title: "Pan_Cancer_scRNAseq_NKG7_Expression"
+author: "Dillon Corvino"
+date: "20/09/2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+Built with R version `r getRversion()`
+
+## Setup {.tabset}
+
+### Dataset information
+```{r Dataset_Info}
+
+# Title: 
+# Authors: 
+# Species:
+# organ:
+# cell type:
+# Sample info:
+
+# GEO accession number: 
+
+#https://github.com/ncborcherding/utility
+
+```
+
+
+### Environment
+```{r setup}
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,  
+  eval = TRUE, 
+  tidy = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = "../"
+)
+
+
+# Environment Set up
+rm(list = ls()) #Clean workspace
+cat("\014")     #Clean Console
+gc() # Free memory
+
+# Establish working directory
+library("rstudioapi")
+
+# Set working directory to source file location
+setwd(dirname(getActiveDocumentContext()$path))
+setwd("..")
+
+# Load packages
+source("R/Load_packages.R", local = knitr::knit_global())
+
+# Create output directories & load custom functions & colour scheme
+source("R/Setup.R", local = knitr::knit_global())
+
+long.compute <- FALSE
+quick.load <- FALSE
+
+```
+
+### Read and format dataset
+```{r reading_data}
+
+
+#melanoma.seurat <- LoadH5Seurat("Data/Unity_dataset_Melanoma.h5Seurat")
+#colorectal.seurat <- LoadH5Seurat("Data/Unity_dataset_Colorectal.h5Seurat")
+#lung.seurat <- LoadH5Seurat("Data/Unity_dataset_Lung.h5Seurat") // Lung is 9Gb
+tumour.seurat <- LoadH5Seurat("Data/Unity_dataset_Tumor.h5Seurat")
+
+tumour.seurat #5,4971 genes, 761,780 cells
+
+# subset for select tumour types 
+Idents(tumour.seurat) <- tumour.seurat@meta.data$Tissue
+unique(tumour.seurat@meta.data$Tissue)
+
+
+Mel.CRC.LG.seurat <- subset(tumour.seurat, ident = c("Lung", "Colorectal", "Melanoma"))
+
+
+# Clean up memory
+rm(tumour.seurat)
+gc()
+
+
+Mel.CRC.LG.seurat # 54,971 genes and 512,357 cells
+
+
+SaveH5Seurat(object = Mel.CRC.LG.seurat, 
+                 filename = paste0("Data/Unity_dataset_Mel_CRC_LG.h5Seurat"),
+                 verbose = TRUE,
+                 overwrite = FALSE)
+    
+
+
+
+
+
+
+
+
+DefaultAssay(Mel.CRC.LG.seurat) <- "RNA"
+
+Mel.CRC.LG.seurat <- Seurat::SCTransform(Mel.CRC.LG.seurat, 
+                                       method = "glmGamPoi", 
+                                       vars.to.regress = "mito.genes", 
+                                       verbose = TRUE) 
+
+# Calculate PCA
+Mel.CRC.LG.seurat <- Seurat::RunPCA(Mel.CRC.LG.seurat, 
+                                  npcs = 20, 
+                                  verbose = TRUE, 
+                                  rev.pca = TRUE,
+                                  seed.use = 42)
+
+# Find neighbours
+melanoma.seurat <- Seurat::FindNeighbors(melanoma.seurat, 
+                                         dims = 1:20)
+
+# Find clusters
+melanoma.seurat <- Seurat::FindClusters(melanoma.seurat, 
+                                        resolution = 0.1)
+
+
+melanoma.seurat@meta.data$Sample
+
+PCAPlot(melanoma.seurat, 
+        dims = c(1, 2),
+        pt.size = 2, 
+        group.by = "Sample")
+
+
+#dev.copy(pdf,  paste0(output.path, "/PCA_dim1_vs_2.pdf"))
+#dev.off()
+
+
+  
+# Calculate tSNE
+melanoma.seurat <- Seurat::RunTSNE(melanoma.seurat, 
+                                   reduction = "pca",
+                                   dims = 1:20,
+                                   perplexity = 30,
+                                   method = "FIt-SNE",
+                                   seed.use = 42,
+                                   dim.embed = 2)
+
+
+
+# Calculate UMAP
+melanoma.seurat <- Seurat::RunUMAP(melanoma.seurat, 
+                                   reduction = "pca",
+                                   dims = 1:20,
+                                   umap.method = "uwot", 
+                                   n.neighbors = 45, # 5 to 50 // 45
+                                   min.dist = 0.5, # Sensible values are in the range 0.001 to 0.5 // 0.5
+                                   seed.use = 42)
+
+
+
+UMAPPlot(melanoma.seurat, 
+         group.by = "consensus.major")
+
+
+
+markers.vec <- Seurat::FindAllMarkers(melanoma.seurat, 
+                                      only.pos = FALSE)
+
+top.DEG <- markers.vec %>%
+  dplyr::filter(p_val_adj < 0.05) %>%
+  dplyr::group_by(cluster) %>%
+  dplyr::top_n(10, avg_log2FC) %>%
+  dplyr::pull(gene)
+
+top.DEG <- unique(top.DEG)
+
+
+
+
+melanoma.seurat@meta.data$consensus.major
+
+Idents(melanoma.seurat) <- melanoma.seurat@meta.data$seurat_clusters
+small.seurat <- subset(melanoma.seurat, downsample = 300)
+
+DoHeatmap(small.seurat, 
+          features = top.DEG)
+
+
+
+# MEl, colorectl, lung
+
+```
+ 
+### NKG7 expression overview
+```{r NKG7_overview}
+
+
+# Make output directory
+if(!dir.exists("output/figures/NKG7")){
+  dir.create("output/figures/NKG7",
+             recursive = TRUE)}
+
+
+colnames(filtered.seurat@meta.data)
+unique(filtered.seurat@meta.data$Tissue)
+unique(filtered.seurat@meta.data$HPCA.pruned.labels)
+unique(filtered.seurat@meta.data$Type)
+unique(filtered.seurat@meta.data$functional.cluster)
+unique(filtered.seurat@meta.data$functional.cluster.conf)
+
+unique(filtered.seurat@meta.data$consensus.major)
+
+
+Idents(filtered.seurat) <- filtered.seurat@meta.data$Type
+
+tumour.seurat <- subset(filtered.seurat, ident = "Tumor")
+rm(filtered.seurat)
+gc()
+
+unique(tumour.seurat@meta.data$Type)
+
+
+unique(tumour.seurat@meta.data$consensus.major)
+
+Idents(tumour.seurat) <- tumour.seurat@meta.data$consensus.major
+
+small.seurat <- subset(tumour.seurat, downsample = 500)
+
+
+VlnPlot(small.seurat,
+        feature = "NKG7",
+        group.by = "consensus.major",
+        pt.size = 0)
+
+
+
+
+# consensus.Tcell
+UMAPPlot(tumour.seurat, 
+         group.by = "consensus.major",
+         raster = TRUE)
+
+#dev.copy(pdf, "output/figures/UMAP_consensus_T_cell.pdf")
+#dev.off()
+
+
+
+
+
+
+
+
+
+
+# UMAP feature plot
+FeaturePlot(filtered.seurat, 
+            "NKG7")
+
+dev.copy(pdf, "output/figures/NKG7/UMAP_NKG7_Expression.pdf")
+dev.off()
+
+# Type
+VlnPlot(filtered.seurat, 
+        "NKG7", 
+        group.by = "Type", 
+        log = TRUE,
+        pt.size = 0) + 
+  NoLegend()
+
+dev.copy(pdf, "output/figures/NKG7/VlnPlot_NKG7_Expression_by_Type.pdf")
+dev.off()
+
+# Tissue
+VlnPlot(filtered.seurat, 
+        "NKG7", 
+        group.by = "Tissue", 
+        log = TRUE,
+        pt.size = 0) + 
+  NoLegend()
+
+dev.copy(pdf, "output/figures/NKG7/VlnPlot_NKG7_Expression_by_Tissue.pdf")
+dev.off()
+
+# functional.cluster
+VlnPlot(filtered.seurat, 
+        "NKG7", 
+        group.by = "functional.cluster", 
+        log = TRUE,
+        pt.size = 0) + 
+  NoLegend()
+
+dev.copy(pdf, "output/figures/NKG7/VlnPlot_NKG7_Expression_by_functional_cluster.pdf")
+dev.off()
+
+# DICE.first.labels
+VlnPlot(filtered.seurat, 
+        "NKG7", 
+        group.by = "DICE.first.labels", 
+        log = TRUE,
+        pt.size = 0) + 
+  NoLegend()
+
+dev.copy(pdf, "output/figures/NKG7/VlnPlot_NKG7_Expression_by_DICE_first_labels.pdf")
+dev.off()
+
+
+
+# HPCA.pruned.labels
+VlnPlot(filtered.seurat, 
+        "NKG7", 
+        group.by = "HPCA.pruned.labels", 
+        log = TRUE,
+        pt.size = 0) + 
+  NoLegend()
+
+dev.copy(pdf, "output/figures/NKG7/VlnPlot_NKG7_Expression_by_HPCA_pruned_labels.pdf")
+dev.off()
+
+
+
+# Tissue
+RidgePlot(filtered.seurat, 
+        "NKG7", 
+        group.by = "Tissue", 
+        log = TRUE)
+
+
+
+
+```
+
+

@@ -1,0 +1,398 @@
+---
+title: "Pan_Cancer_scRNAseq_Pre_processing"
+author: "Dillon Corvino"
+date: "20/09/2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+Built with R version `r getRversion()`
+
+## Setup {.tabset}
+
+### Dataset information
+```{r Dataset_Info}
+
+# Title: 
+# Authors: 
+# Species:
+# organ:
+# cell type:
+# Sample info:
+
+# GEO accession number: 
+
+#https://github.com/ncborcherding/utility
+
+```
+
+
+### Environment
+```{r setup}
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,  
+  eval = TRUE, 
+  tidy = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = "../"
+)
+
+
+# Environment Set up
+rm(list = ls()) #Clean workspace
+cat("\014")     #Clean Console
+gc() # Free memory
+
+# Establish working directory
+library("rstudioapi")
+
+# Set working directory to source file location
+setwd(dirname(getActiveDocumentContext()$path))
+setwd("..")
+
+# Load packages
+source("R/Load_packages.R", local = knitr::knit_global())
+
+# Create output directories & load custom functions & colour scheme
+source("R/Setup.R", local = knitr::knit_global())
+
+long.compute <- FALSE
+quick.load <- FALSE
+
+```
+
+### Read and format dataset
+```{r reading_data}
+
+
+
+if(long.compute){
+  
+  
+  # Read in full Borcheling dataset with all entities
+  filtered.seurat <- readRDS("Data/filtered_seuratObjects_harmony.rds")
+  
+  filtered.seurat 
+  # 54,971 genes and 1,316,585 cells
+  
+}
+
+
+```
+ 
+### Overview of dataset
+```{r dataset_overview}
+
+colnames(filtered.seurat@meta.data)
+ 
+# Tissue
+UMAPPlot(filtered.seurat, 
+         group.by = "Tissue",
+         raster = TRUE)
+
+dev.copy(pdf, "output/figures/UMAP_tissue.pdf")
+dev.off()
+
+# Cohort
+UMAPPlot(filtered.seurat, 
+         group.by = "Cohort",
+         raster = TRUE)
+
+dev.copy(pdf, "output/figures/UMAP_cohort.pdf")
+dev.off()
+
+# Type
+UMAPPlot(filtered.seurat, 
+         group.by = "Type",
+         raster = TRUE)
+
+dev.copy(pdf, "output/figures/UMAP_type.pdf")
+dev.off()
+
+# consensus.major
+UMAPPlot(filtered.seurat, 
+         group.by = "consensus.major",
+         raster = TRUE)
+dev.copy(pdf, "output/figures/UMAP_consensus_major.pdf")
+dev.off()
+
+# consensus.Tcell
+UMAPPlot(filtered.seurat, 
+         group.by = "consensus.Tcell",
+         raster = TRUE)
+
+dev.copy(pdf, "output/figures/UMAP_consensus_T_cell.pdf")
+dev.off()
+
+
+
+FeaturePlot(filtered.seurat, 
+            "NKG7")
+
+
+
+
+
+
+```
+
+
+
+
+## SCT normalise data
+
+```{r SCT_normalisation}
+
+
+if(long.conpute){
+  # Normalise and scale with SCTransform 
+  filtered.seurat <- SCTransform(filtered.seurat, 
+                                 method = "glmGamPoi", 
+                                 vars.to.regress = "mito.genes", 
+                                 verbose = TRUE) 
+  
+  # save normalised dataset
+  saveRDS(filtered.seurat, "Exported_RDS_files/Renal_data_Tcell_only_seurat.rds")
+}
+
+```
+
+
+
+## Unbiased Clustering {.tabset}
+
+### Clustering
+```{r PCA_and_cluster_identification}
+
+################################
+# PCA and cluster identification
+################################
+
+
+# Set seed for reproducibility
+set.seed(42)
+
+
+# Calculate PCA
+filtered.seurat <- Seurat::RunPCA(filtered.seurat, 
+                                  npcs = 20, 
+                                  verbose = TRUE, 
+                                  rev.pca = TRUE,
+                                  seed.use = 42)
+
+# Find neighbours
+filtered.seurat <- Seurat::FindNeighbors(filtered.seurat, 
+                                         dims = 1:20)
+
+# Find clusters
+filtered.seurat <- Seurat::FindClusters(filtered.seurat, 
+                                        resolution = 0.1)
+
+colnames(filtered.seurat@meta.data)
+
+# Plot PCA
+
+# Create output dir
+output.path <- paste0("output/figures/PCA")
+
+if(!dir.exists(output.path)){
+  dir.create(output.path, 
+             recursive = TRUE)}
+
+
+
+PCAPlot(filtered.seurat, 
+        dims = c(1, 2),
+        pt.size = 2, 
+        group.by = "Sample")
+
+
+dev.copy(pdf,  paste0(output.path, "/PCA_dim1_vs_2.pdf"))
+dev.off()
+
+
+
+PCAPlot(filtered.seurat, 
+        dims = c(2, 3),
+        pt.size = 2, 
+        group.by = "orig.ident")
+
+
+dev.copy(pdf,  paste0(output.path, "/PCA_dim2_vs_3.pdf"))
+dev.off()
+
+
+
+
+
+
+#################################################################
+# Determine statistically significant principal components
+#################################################################
+
+for(i in seq_along(seurat.list)){
+  
+  # get output.dir
+  output.path <- paste0("output/figures/PCA_", names(seurat.list)[i])
+  
+  print(
+    ElbowPlot(seurat.list[[i]],
+              ndims = 20)
+  )
+  
+  dev.copy(pdf,  paste0(output.path, "/PC_elbowplot.pdf"))
+  dev.off()
+}
+
+
+
+```
+
+
+### UMAP and tSNE dim Reduction
+```{r Dim_reduction}
+
+
+# Calculate UMAP
+filtered.seurat <- Seurat::RunUMAP(filtered.seurat, 
+                                   reduction = "pca",
+                                   dims = 1:20,
+                                   umap.method = "uwot", 
+                                   n.neighbors = 45, # 5 to 50 // 45
+                                   min.dist = 0.5, # Sensible values are in the range 0.001 to 0.5 // 0.5
+                                   seed.use = 42)
+
+# Plot UMAP
+
+# Create output dir
+output.path <- paste0("output/figures/UMAP")
+
+if(!dir.exists(output.path)){
+  dir.create(output.path, 
+             recursive = TRUE)}
+
+
+UMAPPlot(filtered.seurat, 
+         group.by = "Sample")
+
+
+dev.copy(pdf,  paste0(output.path, "/UMAP_sampleID.pdf"))
+dev.off()
+
+
+UMAPPlot(filtered.seurat, 
+         group.by = "seurat_clusters")
+
+
+dev.copy(pdf,  paste0(output.path, "/UMAP_seurat_clusters.pdf"))
+dev.off()
+
+UMAPPlot(filtered.seurat, 
+         group.by = "Type")
+
+
+dev.copy(pdf,  paste0(output.path, "/UMAP_Type.pdf"))
+dev.off()
+
+
+UMAPPlot(filtered.seurat, 
+         group.by = "consensus.Tcell")
+
+
+dev.copy(pdf,  paste0(output.path, "/UMAP_Tcell.pdf"))
+dev.off()
+
+
+
+
+colnames(filtered.seurat@meta.data)
+
+
+
+# Save dataset with dim reduction
+saveRDS(filtered.seurat, "Exported_RDS_files/Renal_data_Tcell_only_seurat.rds")
+
+```
+
+
+## Imputation {.tabset}
+
+### Imputation calculation
+```{r seurat_imputation}
+
+
+if(long.compute){
+  
+  filtered.seurat <- SeuratWrappers::RunALRA(filtered.seurat, 
+                                             genes.use = rownames(filtered.seurat))
+  
+  
+  
+  # Save dataset with dim reduction
+  saveRDS(filtered.seurat, "Exported_RDS_files/Renal_data_Tcell_only_seurat.rds")
+  
+}
+
+
+```
+
+
+
+```{r remedy001}
+
+Working with the Data
+There is no assigned clusters across the single-cells. In order to incorporate additional data sets for use, we opted not to cluster. Clustering can easily be performed using the code below:
+
+seuratObject <- FindNeighbors(seuratObject, reduction = "harmony") 
+seuratObject <- FindClusters(seuratObject)
+If subsetting the data, either by cell type or other variables in the meta data, re-intergration using Harmony will be required:
+
+subset.1 <- subset(seuratObject, "Consensus.Major" == "T_cell")
+subset.1 <- RunHarmony(subset.1, group.by.vars = c("Cohort", "Sample"), max.iter.harmony = 20)
+subset.1 <- RunUMAP(subset.1, reduction = "harmony", dims = 1:20)
+
+
+```
+
+
+### DEG calculation
+```{r DEG_calculation}
+
+if(long.compute){
+  for(i in seq_along(seurat.list)){
+    DefaultAssay(seurat.list[[i]]) <- "SCT"
+  }
+  
+  #BiocManager::install('limma')
+  #library("limma")
+  
+  
+  markers.vec <- lapply(seurat.list, 
+                        FUN = Seurat::FindAllMarkers,
+                        only.pos = FALSE)
+  
+  
+  # Save dataset with dim reduction
+  saveRDS(markers.vec, "Exported_RDS_files/DEG_markers.rds")
+  
+  
+}
+
+```
+
+
+
