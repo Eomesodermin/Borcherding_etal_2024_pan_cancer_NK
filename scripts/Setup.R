@@ -12,8 +12,24 @@ working.dir <- getwd()
 # For reproducibility
 set.seed(42)
 
-# Load colour schemes and functions
-#source("R/Colour_scheme_variable.R", local = knitr::knit_global())
+# Explicitly load key packages
+library("Seurat")
+library("SeuratDisk")
+library("dplyr")
+library("scCustomize")
+
+# Establish colour scheme
+source("scripts/variables/Colour_scheme_variable.R", local = knitr::knit_global())
+
+# Load custom functions
+source("scripts/functions/scRNAseq_function.R", local = knitr::knit_global())
+source("scripts/functions/annotate_seurat_heatmap_function.R", local = knitr::knit_global())
+source("scripts/functions/Enhanced_volcano_custom_defaults_function.R", local = knitr::knit_global())
+
+# TCR specific functions
+source("scripts/functions/combineMeta_function.R", local = knitr::knit_global())
+source("scripts/functions/Clonotype_distribution_function.R", local = knitr::knit_global())
+source("scripts/functions/get_clonotypes_function.R", local = knitr::knit_global())
 
 
 ###############################
@@ -21,8 +37,17 @@ set.seed(42)
 ###############################
 
 # Common directories 
-if(!dir.exists("Exported_RDS_files")){dir.create("Exported_RDS_files", recursive = T)}
-if(!dir.exists("output")){dir.create("output", recursive = T)}
-if(!dir.exists("output/figures")){dir.create("output/figures", recursive = T)}
-if(!dir.exists("output/tables")){dir.create("output/tables", recursive = T)}
-if(!dir.exists("output/QC")){dir.create("output/QC", recursive = T)}
+if(!dir.exists("saves")){dir.create("saves", recursive = T)}
+
+# scRNAseq directories
+if(!dir.exists("results/scRNAseq")){dir.create("results/scRNAseq", recursive = T)}
+if(!dir.exists("results/scRNAseq/figures")){dir.create("results/scRNAseq/figures", recursive = T)}
+if(!dir.exists("results/scRNAseq/QC")){dir.create("results/scRNAseq/QC", recursive = T)}
+if(!dir.exists("results/scRNAseq/tables")){dir.create("results/scRNAseq/tables", recursive = T)}
+
+# TCRseq directories
+if(!dir.exists("results/tcr")){dir.create("results/tcr", recursive = T)}
+if(!dir.exists("results/tcr/figures")){dir.create("results/tcr/figures", recursive = T)}
+if(!dir.exists("results/tcr/QC")){dir.create("results/tcr/QC", recursive = T)}
+if(!dir.exists("results/tcr/tables")){dir.create("results/tcr/tables", recursive = T)}
+
