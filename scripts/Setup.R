@@ -21,16 +21,8 @@ library("scCustomize")
 # Establish colour scheme
 source("scripts/variables/Colour_scheme_variable.R", local = knitr::knit_global())
 
-# Load custom functions
-source("scripts/functions/scRNAseq_function.R", local = knitr::knit_global())
-source("scripts/functions/annotate_seurat_heatmap_function.R", local = knitr::knit_global())
-source("scripts/functions/Enhanced_volcano_custom_defaults_function.R", local = knitr::knit_global())
-
-# TCR specific functions
-source("scripts/functions/combineMeta_function.R", local = knitr::knit_global())
-source("scripts/functions/Clonotype_distribution_function.R", local = knitr::knit_global())
-source("scripts/functions/get_clonotypes_function.R", local = knitr::knit_global())
-
+# load custom functions
+source("scripts/functions/scRNAseq_Correlation.R", local = knitr::knit_global())
 
 ###############################
 # create output directories
@@ -38,16 +30,4 @@ source("scripts/functions/get_clonotypes_function.R", local = knitr::knit_global
 
 # Common directories 
 if(!dir.exists("saves")){dir.create("saves", recursive = T)}
-
-# scRNAseq directories
-if(!dir.exists("results/scRNAseq")){dir.create("results/scRNAseq", recursive = T)}
-if(!dir.exists("results/scRNAseq/figures")){dir.create("results/scRNAseq/figures", recursive = T)}
-if(!dir.exists("results/scRNAseq/QC")){dir.create("results/scRNAseq/QC", recursive = T)}
-if(!dir.exists("results/scRNAseq/tables")){dir.create("results/scRNAseq/tables", recursive = T)}
-
-# TCRseq directories
-if(!dir.exists("results/tcr")){dir.create("results/tcr", recursive = T)}
-if(!dir.exists("results/tcr/figures")){dir.create("results/tcr/figures", recursive = T)}
-if(!dir.exists("results/tcr/QC")){dir.create("results/tcr/QC", recursive = T)}
-if(!dir.exists("results/tcr/tables")){dir.create("results/tcr/tables", recursive = T)}
-
+if(!dir.exists("results")){dir.create("results", recursive = T)}

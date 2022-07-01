@@ -64,9 +64,6 @@ library("rstudioapi")
 setwd(dirname(getActiveDocumentContext()$path))
 setwd("..")
 
-# Load packages
-source("R/Load_packages.R", local = knitr::knit_global())
-
 # Create output directories & load custom functions & colour scheme
 source("R/Setup.R", local = knitr::knit_global())
 

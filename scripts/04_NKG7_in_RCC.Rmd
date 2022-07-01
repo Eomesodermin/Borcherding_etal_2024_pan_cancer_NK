@@ -1,0 +1,271 @@
+---
+title: "Pan_Cancer_scRNAseq_NKG7_Expression"
+author: "Dillon Corvino"
+date: "20/09/2021"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+---
+
+Built with R version `r getRversion()`
+
+## Setup {.tabset}
+
+### Dataset information
+```{r Dataset_Info}
+
+# Title: 
+# Authors: 
+# Species:
+# organ:
+# cell type:
+# Sample info:
+
+# GEO accession number: 
+
+#https://github.com/ncborcherding/utility
+
+```
+
+
+### Environment
+```{r setup}
+
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,  
+  eval = TRUE, 
+  tidy = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = "../"
+)
+
+
+# Environment Set up
+rm(list = ls()) #Clean workspace
+cat("\014")     #Clean Console
+gc() # Free memory
+
+# Establish working directory
+library("rstudioapi")
+
+# Set working directory to source file location
+setwd(dirname(getActiveDocumentContext()$path))
+setwd("..")
+
+# Create output directories & load custom functions & colour scheme
+source("scripts/Setup.R", local = knitr::knit_global())
+
+long.compute <- FALSE
+quick.load <- FALSE
+
+```
+
+### Read and format dataset
+```{r reading_data}
+
+
+renal.seurat <- LoadH5Seurat("data/Renal.h5Seurat")
+
+renal.seurat #5,4971  genes, 69,319  cells
+
+
+
+if(long.compute){
+  # Type annotation
+  table(renal.seurat@meta.data$Type)/1000
+  
+  
+  # Normalise and harmonize dataset and calculate umap projection
+  renal.seurat <- 
+    renal.seurat %>%
+    NormalizeData() %>%
+    FindVariableFeatures() %>%
+    ScaleData() %>%
+    RunPCA() %>%
+    harmony::RunHarmony(reduction = "pca",
+                        group.by.vars = c("Cohort"), 
+                        plot_convergence = TRUE, 
+                        verbose = TRUE) %>%
+    RunUMAP(reduction = "harmony", 
+            dims = 1:20) %>%
+    FindNeighbors(reduction = "harmony",
+                  dims = 1:20) %>%
+    FindClusters(resolution = 0.5)
+  
+  
+  # save filtered dataset
+  SaveH5Seurat(renal.seurat, 
+               "data/Renal_normed.h5Seurat",
+               overwrite = TRUE)
+  
+}
+
+
+
+```
+ 
+### NKG7 expression overview
+```{r NKG7_overview}
+
+output.dir <- "results/RCC_NKG7/"
+# Make output directory
+if(!dir.exists(output.dir)){
+  dir.create(output.dir,
+             recursive = TRUE)}
+
+
+colnames(renal.seurat@meta.data$functional.cluster)
+
+table(renal.seurat@meta.data$DICE.pruned.labels)
+
+# annotation umap
+
+UMAPPlot(renal.seurat, 
+         group.by = "DICE.pruned.labels")
+
+dev.copy(pdf, paste0(output.dir, "Renal_cell_annotation.pdf"))
+dev.off()
+
+
+# Type
+VlnPlot(renal.seurat, 
+        "CD3E", 
+        group.by = "Type", 
+        pt.size = 0) + 
+  NoLegend()
+
+dev.copy(pdf, paste0(output.dir, "Renal_VlnPlot_NKG7_by_Type.pdf"))
+dev.off()
+
+# DICE.first.labels
+VlnPlot(renal.seurat, 
+        "NKG7", 
+        group.by = "DICE.first.labels", 
+        pt.size = 0) + 
+  NoLegend()
+
+dev.copy(pdf, paste0(output.dir, "Renal_VlnPlot_NKG7_by_DICE_annotation.pdf"))
+dev.off()
+
+
+
+
+# Visualise GOI Expression 
+
+
+output.dir <- "results/RCC_NKG7/GOI_plots/"
+
+# Make output directory
+if(!dir.exists(output.dir)){
+  dir.create(output.dir,
+             recursive = TRUE)}
+
+
+
+
+goi <- c("NKG7", "CD3E", "CD8A", "CD8B", "CD4", "NCAM1", "PRF1", "GZMA", "GZMB", "GZMH", "GZMK", "GZMM", "GNLY", "CTSW", "IFNG", "TNF", "IL10")
+
+
+for(i in seq_along(goi)){
+  
+# Density plots 
+  print(
+Plot_Density_Custom(renal.seurat, 
+                    features =  goi[i],
+                    custom_palette = batlow.pal,
+                    joint = FALSE, 
+                    pt.size = 1, 
+                    reduction = "umap")
+)
+  
+dev.copy(pdf, paste0(output.dir, "Renal_Nebulosa_", goi[i], ".pdf"))
+dev.off()
+
+
+print(
+VlnPlot(renal.seurat,
+        feature = goi[i],
+        group.by = "DICE.pruned.labels",
+        pt.size = 0)
+)
+
+dev.copy(pdf, paste0(output.dir, "Renal_Vlnplot_", goi[i], ".pdf"))
+dev.off()
+
+}
+
+
+
+
+```
+
+
+### Correlation analysis
+```{r correlation_analysis}
+
+# Set up dataset
+DefaultAssay(renal.seurat) <- "RNA"
+
+# dataset is very large, downsample for correlation analysis 
+
+
+table(renal.seurat@meta.data$Cohort)
+
+Idents(renal.seurat) <- renal.seurat@meta.data$Cohort
+
+small.seurat <- subset(renal.seurat, downsample = 10000)
+
+input.data <- GetAssayData(small.seurat, slot = "data")
+
+
+
+
+cor.df <- sc.correlation(input.data, 
+                           goi = "NKG7", 
+                           remove.quantile = 0.3,
+                           output.tables = "results/RCC_NKG7/Correlation_analysis")
+
+
+
+################################
+# Heatmap of top correlations
+################################
+
+small.seurat <- subset(renal.seurat, downsample = 1000)
+
+correlation.heatmaps(small.seurat, 
+                     correlation.df = cor.df, 
+                     up.n = 10, # number of up regulated genes to show
+                     dn.n = 10, # number of downregulated genes to show
+                     goi = "NKG7", 
+                     output.figures = "results/RCC_NKG7/Correlation_analysis")
+
+
+
+cor.df %>%
+    dplyr::filter(FDR < 0.05) %>%
+    dplyr::top_n(10, Cor.val)
+  
+
+
+
+
+
+
+
+```
+ 
+ 
+
