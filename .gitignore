@@ -19,6 +19,7 @@ saves/archive/**/**
 
 # Data
 data/archive/**/**
+data/**
 
 # files to large for gilt's
 data/velocity/**/**
