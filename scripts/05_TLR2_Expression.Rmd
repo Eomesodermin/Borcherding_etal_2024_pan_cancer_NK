@@ -1,0 +1,468 @@
+---
+title: "05_TLR2_Expression"
+author: "Dillon Corvino"
+date: "07/03/2022"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: united
+    highlight: tango
+    df_print: paged
+    code_folding: hide
+editor_options: 
+  chunk_output_type: console
+  markdown: 
+    wrap: 72
+---
+
+Built with R version `{r} getRversion()`
+
+## Setup {.tabset}
+
+### Dataset information
+
+```{r Dataset_Info}
+
+# HNSCC scRNAseq/scTCRseq dataset
+# Cells are HNSCC TILs sorted on Lymphocytes/Live/CD3+/CD4-/CD8+
+# Human samples
+# Each sample is a pool of 4 patients
+# samples 1 and 2 are unstimulated 
+# samples 3 and 4 are stimulated 
+# Patients in sample 1 match patients in sample 3 and sample 2 pairs with 4
+# Data acquired was transcript expression, ADT (antibody expression), and TCRA & B sequences
+# This analysis uses just Transcript and TCR data
+
+
+# General information
+# CellRanger was used for sequence alignment/QC/counts/TCR calls - performed by Ross (QIMR, Brisbane, Aus)
+# DC was provided the output from CellRanger (counts matrix) and used this as input for analysis within this script
+
+```
+
+### Environment
+
+```{r setup, message = FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  message = FALSE,
+  warning = FALSE,  
+  eval = TRUE, 
+  tidy = TRUE
+)
+
+knitr::opts_knit$set(
+  root.dir = "../"
+)
+
+# Environment Set up
+rm(list = ls()) #Clean workspace
+cat("\014")     #Clean Console
+gc() # Free memory
+
+
+# Establish working directory
+library("rstudioapi")
+
+# Set working directory to source file location
+setwd(dirname(getActiveDocumentContext()$path))
+setwd("..")
+
+# Create output directories & load custom functions & colour scheme
+source("scripts/Setup.R", local = knitr::knit_global())
+
+
+# Colour scheme
+library("scico")
+
+#scico_palette_show()
+batlow.pal <- scico(100, palette = 'batlow')
+
+
+
+
+
+
+
+# pipeline variables
+long.compute <- FALSE
+
+# load required packages
+require(tidyverse)
+require(Seurat)
+require(Nebulosa)
+require(dplyr)
+library(harmony)
+
+
+
+# Create output directory
+output.dir <- "results/TLR2/"
+
+if(!dir.exists(paste0(output.dir))){
+  dir.create(paste0(output.dir), 
+             recursive = TRUE)
+}
+```
+
+
+
+## Pancancer Utility dataset pre-processing {.tabset}
+
+### Prepare dataset / read and filter for tumor and normal only
+
+```{r read_dataset_pancancer}
+
+if(long.compute){
+  
+  # read in entire dataset
+  pancancer.seurat <- LoadH5Seurat("data/Utility_dataset.h5Seurat")
+  
+  
+  # subset to keep only normal and tumor data
+  Idents(pancancer.seurat) <- pancancer.seurat@meta.data$Type
+  pancancer.seurat <- subset(pancancer.seurat, idents = c("Tumor", "Normal"))
+  
+
+library(harmony)
+# Normalise and harmonize dataset and calculate umap projection
+pancancer.seurat <- 
+  pancancer.seurat %>%
+  NormalizeData() %>%
+  FindVariableFeatures() %>%
+  ScaleData() %>%
+  RunPCA() %>%
+  harmony::RunHarmony(reduction = "pca",
+                      group.by.vars = c("Cohort"), 
+                      plot_convergence = TRUE, 
+                      verbose = TRUE) %>%
+  RunUMAP(reduction = "harmony", 
+          dims = 1:20) %>%
+  FindNeighbors(reduction = "harmony",
+                dims = 1:20) %>%
+  FindClusters(resolution = 0.5)
+
+
+# save filtered dataset
+SaveH5Seurat(pancancer.seurat, 
+             "data/pancancer_tumor_normal_normed.h5Seurat",
+             overwrite = TRUE)
+
+
+
+
+table(pancancer.seurat@meta.data$Tissue, pancancer.seurat@meta.data$Type)
+# Some entities only have tumor sample and no normal tissue 
+
+# subset dataset for just tumor tissue and then downsample 
+
+Idents(pancancer.seurat) <- pancancer.seurat@meta.data$Type
+
+tumor.seurat <- subset(pancancer.seurat, idents = "Tumor")
+
+
+
+#x <- table(tumor.seurat@meta.data$Tissue)
+#min(x) # smallest is melanoma dataset at 2,263 
+
+# therefore downsample to 2,000 cells
+
+#Idents(tumor.seurat) <- tumor.seurat@meta.data$Tissue
+
+#tumor.seurat <- subset(tumor.seurat, downsample = 2000)
+
+
+# save filtered dataset
+SaveH5Seurat(tumor.seurat, 
+             "data/tumor_seurat.h5Seurat",
+             overwrite = TRUE)
+
+
+
+
+# results showed hi expression of TLR2 in renal, Esophagus and ovarian
+# subset for these to compare normal and tumor
+Idents(pancancer.seurat) <- pancancer.seurat@meta.data$Tissue
+
+Renal.seurat <- subset(pancancer.seurat, idents = c("Renal"))
+
+
+
+
+}else{
+  
+  #pancancer.seurat <- LoadH5Seurat("data/pancancer_tumor_normal_normed.h5Seurat")
+  tumor.seurat <- LoadH5Seurat("data/tumor_seurat.h5Seurat")
+
+}
+
+
+
+
+```
+ 
+### Broad visualisation of dataset
+```{r vis_dataset}
+
+
+# Pruned labels
+UMAPPlot(pancancer.seurat, 
+         group.by = "HPCA.pruned.labels") + NoLegend()
+
+  
+dev.copy(pdf, paste0(output.dir, "Pancancer_Umap_HPCA_pruned_labels.pdf"))
+dev.off()
+
+# seurat clusters
+UMAPPlot(pancancer.seurat, 
+         group.by = "seurat_clusters")
+
+dev.copy(pdf, paste0(output.dir, "Pancancer_Umap_seurat_clusters.pdf"))
+dev.off()
+
+
+# seurat clusters split by type
+UMAPPlot(pancancer.seurat, 
+         group.by = "seurat_clusters",
+         split.by = "Type")
+
+dev.copy(pdf, paste0(output.dir, "Pancancer_Umap_split_by_Type.pdf"))
+dev.off()
+
+# type
+UMAPPlot(pancancer.seurat, 
+         group.by = "Type")
+
+dev.copy(pdf, paste0(output.dir, "Pancancer_Umap_Type.pdf"))
+dev.off()
+
+
+# cohort
+UMAPPlot(pancancer.seurat, 
+         group.by = "Cohort")
+
+dev.copy(pdf, paste0(output.dir, "Pancancer_Umap_Cohort.pdf"))
+dev.off()
+
+
+# cohort
+UMAPPlot(pancancer.seurat, 
+         group.by = "Cohort")
+
+dev.copy(pdf, paste0(output.dir, "Pancancer_Umap_Cohort.pdf"))
+dev.off()
+
+# seurat clusters split by type
+UMAPPlot(pancancer.seurat, 
+         group.by = "Tissue",
+         split.by = "Type")
+
+dev.copy(pdf, paste0(output.dir, "Pancancer_Umap_split_tissue_Type.pdf"))
+dev.off()
+
+
+
+
+```
+ 
+ 
+### TLR2 expression
+```{r overview_TLR2}
+
+
+# Downsample dataset for plotting, otherwise can't be imported and used in illustrator etc
+Idents(tumor.seurat) <- tumor.seurat@meta.data$Type
+# dataset has 761,780 cells
+small.seurat <- subset(tumor.seurat, downsample = 100000)
+
+# density plot of TLR2 expression
+Plot_Density_Custom(small.seurat, 
+                    features =  "TLR2",
+                    custom_palette = batlow.pal,
+                    joint = FALSE, 
+                    pt.size = 1, 
+                    reduction = "umap")
+
+dev.copy(pdf, paste0(output.dir, "Tumor_TLR2_expression.pdf"))
+dev.off()
+
+
+
+# density plot of CD14 expression
+Plot_Density_Custom(small.seurat, 
+                    features =  "CD14",
+                    custom_palette = batlow.pal,
+                    joint = FALSE, 
+                    pt.size = 1, 
+                    reduction = "umap")
+
+dev.copy(pdf, paste0(output.dir, "Tumor_CD14_expression.pdf"))
+dev.off()
+
+
+
+
+
+
+# determin TLR2 positivity
+
+# determine cutoff for TLR2 expression 
+VlnPlot(tumor.seurat, 
+        group.by = "seurat_clusters", 
+        features = "TLR2",
+        pt.size = 0.1) +
+  geom_hline(yintercept = 0.5)
+
+dev.copy(pdf, paste0(output.dir, "Tumor_TLR2_expression_cutoff.pdf"))
+dev.off()
+
+# determine cutoff for CD14 expression 
+VlnPlot(tumor.seurat, 
+        group.by = "seurat_clusters", 
+        features = "CD14",
+        pt.size = 0.1) +
+  geom_hline(yintercept = 0.5)
+
+dev.copy(pdf, paste0(output.dir, "Tumor_CD14_expression_cutoff.pdf"))
+dev.off()
+
+
+
+
+
+keep.logic <- grepl("TLR2", rownames(tumor.seurat@assays$RNA@data))
+
+
+TLR2.data <- tumor.seurat@assays$RNA@data[keep.logic, ]
+summary(TLR2.data)
+TLR2.Expression <- TLR2.data > 0.5
+
+tumor.seurat <- AddMetaData(tumor.seurat, 
+                            metadata = TLR2.Expression, 
+                            col.name = "TLR2_expression")
+
+
+
+
+
+
+keep.logic <- grepl("CD14", rownames(tumor.seurat@assays$RNA@data))
+
+
+CD14.data <- tumor.seurat@assays$RNA@data[keep.logic, ]
+summary(CD14.data)
+CD14.Expression <- CD14.data > 0.5
+
+tumor.seurat <- AddMetaData(tumor.seurat, 
+            metadata = CD14.Expression, 
+            col.name = "CD14_Expression")
+
+
+
+
+table(tumor.seurat@meta.data$TLR2_expression)
+
+table(tumor.seurat@meta.data$TLR2_expression, tumor.seurat@meta.data$CD14_Expression)
+
+
+
+VlnPlot(tumor.seurat, 
+        group.by = "CD14_Expression", 
+        features = "TLR2",
+        pt.size = 0.1) +
+  geom_hline(yintercept = 0.5)
+
+
+
+
+
+x <- table(tumor.seurat@meta.data$Tissue, tumor.seurat@meta.data$TLR2_expression)
+
+
+# calculate as a freq of the cluster 
+tissue.sum <- rowSums(x)
+
+# divide each row by the cluster sum
+z <- sweep(x, 1, tissue.sum, "/")
+z <- z*100
+# sanity check
+rowSums(z)
+
+
+
+
+# export data for plotting in prism
+write.csv(z, paste0(output.dir, "tumor_only_and_normalised_by_tissue_type.csv"))
+
+
+
+
+table(pancancer.seurat@meta.data$Type, pancancer.seurat@meta.data$Tissue)
+
+type.vec <- c("Renal", "Colorectal", "Esophagus", "Lung")
+
+for(i in seq_along(type.vec)){
+  
+  # subset for type to compare normal and tumor
+Idents(pancancer.seurat) <- pancancer.seurat@meta.data$Tissue
+
+temp.seurat <- subset(pancancer.seurat, idents = type.vec[i])
+
+  
+
+# get TLR2 data
+keep.logic <- grepl("TLR2", rownames(temp.seurat@assays$RNA@data))
+
+# test for expression
+TLR2.data <- temp.seurat@assays$RNA@data[keep.logic, ]
+TLR2.Expression <- TLR2.data > 0.5
+
+# add to metadata
+temp.seurat <- AddMetaData(temp.seurat, 
+                            metadata = TLR2.Expression, 
+                            col.name = "TLR2_expression")
+
+
+# generate matrix of expression by type
+expression.table <- table(Renal.seurat@meta.data$Type, Renal.seurat@meta.data$TLR2_expression)
+
+
+# calculate as a freq of the cluster 
+type.sum <- rowSums(expression.table)
+
+# divide each row by the cluster sum
+normed.table <- sweep(expression.table, 1, type.sum, "/")
+normed.table <- normed.table*100
+
+
+# export data for plotting in prism
+write.csv(normed.table, 
+          paste0(output.dir, type.vec[i], "_normal_vs_tumor_normed_by_type_freq_TLR2_expression.csv"))
+
+
+rm(temp.seurat, expression.table, normed.table, type.sum, TLR2.data, TLR2.Expression)
+
+gc()
+
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+```
+ 
+
+
